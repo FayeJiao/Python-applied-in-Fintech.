@@ -1,1 +1,83 @@
+import requests
+from datetime import datetime
+import pandas as pd
+import numpy as np
 
+def fetch_crypto_data(symbol, api_key, limit=2000):
+    if api_key.strip():  # Check if api_key is not empty or just whitespace
+        headers = {'Apikey': api_key}  # The header with your API key
+    else:
+        headers = {}  # Empty headers if api_key is empty
+        
+    url = f'https://min-api.cryptocompare.com/data/v2/histoday?fsym={symbol}&tsym=USD&limit={limit}'    
+    response = requests.get(url, headers=headers)
+    data = response.json()
+    return data['Data']['Data']
+
+def main(limit = 2000,api_key=''):
+    # List of cryptocurrency pairs
+    crypto_pairs = ['BTC', 'ETH', 'LTC', 'XRP', 'BCH', 'ADA', 'DOT', 'LINK', 'XLM', 'DOGE', 
+                    'SOL', 'BNB', 'ARB', 'OP',  'CSPR','MINA','NEAR','SHIB','AVAX', 'MATIC']
+    # Create an empty DataFrame to store the data
+    df = pd.DataFrame()
+    # Fetch historical data for each pair
+    for symbol in crypto_pairs:
+        print(f"Fetching data for {symbol}...")
+        data = pd.DataFrame( fetch_crypto_data(symbol,api_key=api_key,
+                                               limit=limit) ) # Limiting to 30 days       
+        data ['date'] = pd.to_datetime(data ['time'], unit='s')
+        data.drop(['time'], inplace = True, axis = 1)
+        data['sym'] = symbol
+        df = pd.concat([df,data], axis = 0)                                
+    return df
+
+df = main(api_key="")
+
+#### Examining BTC/USD ####
+btc = df[df['sym'] == 'BTC']
+
+# 1. Information
+
+btc.info()
+
+# Check for NaN #
+df.isnull().sum()
+
+# Select date, close, volumefrom, volumeto 
+btc = btc[['date','close', 'volumefrom', 'volumeto']]
+
+# Set index
+btc = btc.set_index(['date'])
+
+# 2. Check out the price (close) / volumes etc.
+btc.rename(columns = {'close':'prc'}, inplace = True)
+
+btc['prc'].plot()
+
+btc['volumefrom'].plot()
+(btc['volumeto']/1000000).plot()
+
+# 3. Some investment statistics
+btc['ret'] = btc['prc'].pct_change()
+
+# Cumulative return #
+((1+btc['ret']).cumprod()-1).plot()
+
+# Holding period return #
+hpr = np.round( (btc['prc'].iloc[-1]/btc['prc'].iloc[0] - 1)*100 , 3)
+print(f"BTC/USD holding-period return is {hpr}%")
+
+
+annual_ret = np.round( btc['ret'].mean() * 100 * 365 , 3)
+print(f"BTC/USD annual return is {annual_ret}%")
+
+annual_vol = np.round( btc['ret'].std() *np.sqrt(365) * 100 , 3)
+print(f"BTC/USD annual volatility is {annual_vol}%")
+
+sharpe_ratio = np.round( annual_ret/annual_vol , 3)
+print(f"BTC/USD annual Sharpe ratio is {sharpe_ratio}")
+
+sortino_ratio = np.round( (btc['ret'].mean()/\
+                          btc['ret'][ btc['ret']<0].std())*np.sqrt(365) , 3)
+
+print(f"BTC/USD annual Sortino ratio is {sortino_ratio}")
